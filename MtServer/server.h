@@ -14,6 +14,12 @@
 #include <vector>
 #include <cstring>
 
+/*If you need to check threads work, set 1,else 0
+  Also if you want to add some features in this server realization
+  and need to debug it - create if-endif*/
+#define DEBUG_MODE 1
+
+/*Echo-server class to recieve client message and send them echo-information*/
 class MtServer
 {
 public:
@@ -31,6 +37,7 @@ public:
     close(server_fd);
   }
 
+  /*Main event loop that monitors sockets via select()*/
   void run()
   {
     fd_set read_fds;
@@ -114,9 +121,12 @@ private:
         return;
       }
       unsigned int client_port = ntohs(client_addr.sin6_port);
-      std::cout << "New client connected:\n";
-      std::cout << "Client port: " << client_port << "\n";
-      std::cout << "Client socket_fd: " << client_fd << "\n";
+      {
+        std::lock_guard<std::mutex> lock(cout_mtx);
+        std::cout << "New client connected:\n";
+        std::cout << "Client port: " << client_port << "\n";
+        std::cout << "Client socket_fd: " << client_fd << "\n";
+      }
 
       client_sockets.push_back(client_fd);
     }
@@ -129,17 +139,27 @@ private:
       int client_fd = *it;
       char buffer[BUFFER_SIZE];
       if(FD_ISSET(client_fd,&read_fds)) {
-        int bytes = recv(client_fd,&buffer,sizeof(buffer),0);
+        int bytes = recv(client_fd,&buffer,sizeof(buffer)-1 ,0);
         if(bytes > 0) {
           buffer[bytes] = '\0';
-          thread_poll.add_task([this,client_fd,data = std::string(buffer,bytes)]() {
-            std::cout << "Client (" << client_fd << "): " << data << '\n';
-            std::lock_guard<std::mutex> lock(mtx);
+          thread_pool.add_task([this,client_fd,data = std::string(buffer,bytes)]() {
+            {
+              std::lock_guard<std::mutex> lock(cout_mtx);
+#if DEBUG_MODE
+              std::thread::id thread_id = std::this_thread::get_id();
+              std::cout << "Thread [" << thread_id << "] / ";
+#endif
+              std::cout << "Client (" << client_fd << "): " << data << '\n';
+            }
+            std::lock_guard<std::mutex> lock(tp_mtx);
             send(client_fd,server_message.data(),server_message.size(),0);
           });
         }
         else {
-          std::cout << "Client (" << client_fd << "): disconnected" << '\n';
+          {
+            std::lock_guard<std::mutex> lock(cout_mtx);
+            std::cout << "Client (" << client_fd << "): disconnected" << '\n';
+          }
           close(client_fd);
           it = client_sockets.erase(it);
           continue;
@@ -159,6 +179,8 @@ private:
 
   std::vector<int> client_sockets;
   std::string server_message = "////////// Message received by server //////////";
-  ThreadPool thread_poll;
-  std::mutex mtx;
+
+  ThreadPool thread_pool;
+  std::mutex cout_mtx;
+  std::mutex tp_mtx;
 };

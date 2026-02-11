@@ -50,7 +50,7 @@ int main() {
 
     send(client_fd,client_message.c_str(),client_message.length(),0);
     
-    int bytes = recv(client_fd,&buffer,sizeof(buffer),0);
+    int bytes = recv(client_fd,&buffer,sizeof(buffer)-1,0);
     if (bytes > 0) {
       buffer[bytes] = '\0';
       std::cout << "Message from server: " << buffer << '\n';

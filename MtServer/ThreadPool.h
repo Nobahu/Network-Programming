@@ -42,8 +42,8 @@ public:
     {
       std::lock_guard<std::mutex> lock(queue_mutex);
       stop = true;
+      cv.notify_all();
     }
-    cv.notify_all();
 
     for(auto& thread: threads) {
       thread.join();
@@ -57,8 +57,8 @@ public:
     {
       std::lock_guard<std::mutex>lock(queue_mutex);
       tasks.emplace(std::move(task));
+      cv.notify_one();
     }
-    cv.notify_one();
   }
 
 private:
